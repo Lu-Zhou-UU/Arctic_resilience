@@ -152,20 +152,14 @@ def kde_empirical_potential(E_values, sigma=1.0, grid=None, bw='scott'):
 
 
 def extrema_from_potential(grid, U, spl, E_values=None, kde=None):
-    """
-    Identify minima and saddles in potential U(E).
-
-    If E_values (and optionally kde) are provided, choose the ice-covered
-    minimum (E < 0) closest to the data-mode, then the first saddle to its right.
-
-    Returns
-    -------
-    minima  : list of (E_min, U_min, U''(E_min))
-    saddles : list of (E_sad, U_sad, U''(E_sad))
-    """
-    # 1) Candidate extrema from U
-    min_idx, _ = find_peaks(-U, prominence=0.01, width=2)
-    max_idx, _ = find_peaks( U, prominence=0.01, width=2)
+    """Identify minima and saddles in potential U(E)."""
+    # Adaptive prominence based on potential range
+    U_range = np.max(U) - np.min(U)
+    prominence = max(0.001, U_range * 0.001)  # 0.1% of range
+    width = max(1, len(grid) // 250)  # Adaptive width
+    
+    min_idx, _ = find_peaks(-U, prominence=prominence, width=width)
+    max_idx, _ = find_peaks(U, prominence=prominence, width=width)
 
     d2U = spl.derivative(n=2)
 
@@ -625,7 +619,44 @@ def plot_comprehensive_potential(results, month=10, figsize=(16, 12)):
     plt.tight_layout()
     return fig
 
+def export_sigma_consistency_table(results, month=10,
+                                   output_path='sigma_consistency_october.csv'):
+    """
+    Export a small table comparing observationally estimated σ (AR(1) innovation)
+    per epoch to the published basin-mean reference (~7 W m⁻²) for the Methods
+    'consistency check' sentence. σ here is in E units (J m⁻²).
+    """
+    rows = []
+    for epoch_label, months in results.items():
+        if month not in months:
+            continue
+        r = months[month]
+        sig = r.get('sigma_m', np.nan)
+        if not np.isfinite(sig):
+            continue
+        rows.append({
+            'epoch': epoch_label,
+            'month': int(month),
+            'sigma_innovation_Jm2': sig,
+            'sigma_innovation_1e12Jm2': sig / 1e12,
+        })
 
+    if not rows:
+        print("  ⚠️ No sigma values to export for consistency table.")
+        return pd.DataFrame()
+
+    df = pd.DataFrame(rows)
+    df.to_csv(output_path, index=False, float_format='%.6e')
+
+    # Simple per-epoch summary for direct use in Methods
+    by_epoch = df.groupby('epoch')['sigma_innovation_1e12Jm2'].agg(['mean', 'std', 'count'])
+    print(f"\n✓ σ (AR(1) innovation) consistency check → {output_path}")
+    print("  October σ_E (mean ± 1 s.d.) in units of 10¹² J m⁻²:")
+    for ep, row in by_epoch.iterrows():
+        print(f"    {ep}: {row['mean']:.2f} ± {row['std']:.2f} (N={int(row['count'])})")
+    print("  Note: these σ are in energy units E (J m⁻²);")
+    print("        7 W m⁻² is the stochastic forcing amplitude in the EBM.")
+    return df
 
 def export_comprehensive_metrics(results, filename='resilience_metrics_complete.csv'):
     """
@@ -785,6 +816,13 @@ else:
     # Show only October rows if multiple months exist
     to_show = metrics_df[metrics_df['month'] == 10] if 'month' in metrics_df.columns else metrics_df
     print(to_show[cols].to_string(index=False))
+
+# --- Sigma consistency check (October)
+sigma_consistency_df = export_sigma_consistency_table(
+    results_oct,
+    month=10,
+    output_path='sigma_consistency_october.csv'
+)
 
 
 # # --- After: results_oct = monthly_empirical_potentials_by_epoch(...)

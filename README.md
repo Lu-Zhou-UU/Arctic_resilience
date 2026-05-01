@@ -78,7 +78,7 @@ Common examples include:
 - `compare_obs_stroeve2012.py`
 - `combined_lag_extra_figures.py`
 
-If these are available locally (e.g., `/Volumes/user/`), sync them into this repo before final reruns.
+If these are available locally (e.g., `/Volumes/Yotta_1/`), sync them into this repo before final reruns.
 
 ## Reproducibility Notes
 
@@ -102,3 +102,4 @@ python combined_lag_new.py
 
 - License: GPL-2.0 (`LICENSE`)
 - Repository: <https://github.com/Lu-Zhou-UU/Arctic_resilience>
+
