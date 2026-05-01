@@ -75,6 +75,16 @@ def load_monthly_extent(filepath, start_date="1979-01-01"):
     df = pd.read_csv(filepath, header=None, names=['Extent_km2'])
     dates = pd.date_range(start=pd.Timestamp(start_date), periods=len(df), freq='MS')
     df['Date'] = dates
+    # NOTE: This file has a known calendar discontinuity around 1986-04 where
+    # the monthly phase shifts abruptly. We correct by shifting timestamps
+    # forward by 4 months from the breakpoint onward before month extraction.
+    # This preserves the physical seasonality used in April/October diagnostics.
+    breakpoint = pd.Timestamp("1986-04-01")
+    mask = df['Date'] >= breakpoint
+    if mask.any():
+        df.loc[mask, 'Date'] = df.loc[mask, 'Date'] + pd.DateOffset(months=4)
+        # Keep one value per timestamp after correction.
+        df = df.sort_values('Date').drop_duplicates(subset='Date', keep='first')
     df['Extent'] = df['Extent_km2'] / 1e6  # million km²
     out = df[['Date', 'Extent']].sort_values('Date').reset_index(drop=True)
     print(f"✓ Loaded {len(out)} monthly SIE records "

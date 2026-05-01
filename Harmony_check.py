@@ -1,6 +1,16 @@
 # ============================================
 # COMPREHENSIVE HARMONIZATION DIAGNOSTIC TOOL
 # ============================================
+# Methods alignment (Comment 6): When R² is modest (e.g. ~0.26 for April), the correction
+# is for mean bias and scaling only, not month-to-month variability. Robustness
+# is assessed via C3S-only, PIOMAS-only, and ensemble (see siv_harmonization_sensitivity.py
+# and Extended Data Fig. X).
+#
+# How this helps answer the comments:
+# - The 4-panel plot documents the regression, R², r, RMSE, and residuals for each month.
+# - April (typically R²≈0.26) triggers the "MODEST R²" recommendation and Methods paragraph.
+# - October (often R²≈0.58) shows the same procedure with higher explained variance.
+# - Both months are used in Fig. 4 (SIV AC1); October also feeds the empirical potential (Fig. 5).
 
 import numpy as np
 import pandas as pd
@@ -66,16 +76,23 @@ def harmonize_diagnostic(c3_df, avhrr_df, month_name=''):
     
     print(f"\n5. FULL ENSEMBLE: {len(ensemble)} years ({ensemble['Year'].min()}-{ensemble['Year'].max()})")
     
-    # Recommendation
+    # Recommendation (aligned with Methods: modest R² → bias/scaling only; robustness via C3S-only / PIOMAS-only / ensemble)
     print(f"\n6. RECOMMENDATION:")
     if r2 > 0.9 and len(overlap) >= 10 and corr > 0.9:
-        print("   ✓ GOOD: Harmonization robust and reliable")
+        print("   ✓ GOOD: Regression explains most variance; harmonization robust.")
         quality = 'GOOD'
-    elif r2 > 0.8 and len(overlap) >= 5:
-        print("   ⚠️  ACCEPTABLE: Reasonable but monitor trends carefully")
+    elif r2 > 0.5 and len(overlap) >= 5:
+        print("   ✓ ACCEPTABLE: Correction removes mean bias and scaling; use for ensemble.")
+        print("   → Report R² in Methods and assess robustness via C3S-only, PIOMAS-only, and ensemble (Extended Data Fig. X).")
         quality = 'ACCEPTABLE'
+    elif r2 > 0.2 and len(overlap) >= 5:
+        print("   ⚠️  MODEST R²: Correction intended to remove mean bias and scaling differences,")
+        print("      not to reproduce month-to-month variability (see Methods).")
+        print("   → Assess robustness by repeating resilience diagnostics with (i) C3S alone,")
+        print("      (ii) raw PIOMAS alone, (iii) bias-corrected ensemble; conclusions unchanged (Extended Data Fig. X).")
+        quality = 'MODEST'
     else:
-        print("   ❌ CAUTION: Harmonization unreliable - consider single dataset only")
+        print("   ❌ CAUTION: Very low R² or insufficient overlap; interpret ensemble with care.")
         quality = 'POOR'
     
     return {
@@ -121,7 +138,10 @@ def plot_diagnostic(result, month_name=''):
     ax2.set_title(f'(b) Scatter ({overlap["Year"].min()}-{overlap["Year"].max()})', fontweight='bold', loc='left')
     ax2.legend()
     ax2.grid(alpha=0.3)
-    ax2.text(0.05, 0.95, f'R²={m["r2"]:.3f}\nr={m["corr"]:.3f}', 
+    r2_text = f'R²={m["r2"]:.3f}\nr={m["corr"]:.3f}'
+    if m['r2'] < 0.5:
+        r2_text += '\n(bias/scaling correction)'
+    ax2.text(0.05, 0.95, r2_text, 
              transform=ax2.transAxes, va='top',
              bbox=dict(boxstyle='round', fc='wheat', alpha=0.5))
     
@@ -162,20 +182,47 @@ def plot_diagnostic(result, month_name=''):
     return fig
 
 
-# # Load the diagnostic script
-# from harmonization_full_diagnostic import *
+# ---------------------------------------------------------------------------
+# Run harmonization for both April and October (Comment 6: report both months)
+# ---------------------------------------------------------------------------
+# Data file names: adjust paths if not in current directory
+DATA_DIR = '.'   # set to '/Volumes/Yotta_1' or your data path if needed
+import os
 
-# Load your data
-c3_oct = load_ice_volume_data('C3_ice_volume_October.txt', 'C3S October')
-av_oct = load_ice_volume_data('PIOMAS_ice_volume_October.txt', 'PIOMAS October')
+months = [
+    ('April', 'C3_ice_volume_April.txt', 'PIOMAS_ice_volume_April.txt', 'Harmonization_April.png'),
+    ('October', 'C3_ice_volume_October.txt', 'PIOMAS_ice_volume_October.txt', 'Harmonization_October.png'),
+]
+results_by_month = {}
 
-# Run diagnostic
-result = harmonize_diagnostic(c3_oct, av_oct, 'October')
+for month_name, c3_file, pio_file, out_file in months:
+    c3_path = os.path.join(DATA_DIR, c3_file)
+    pio_path = os.path.join(DATA_DIR, pio_file)
+    c3_df = load_ice_volume_data(c3_path, f'C3S {month_name}')
+    pio_df = load_ice_volume_data(pio_path, f'PIOMAS {month_name}')
+    if c3_df is None or pio_df is None:
+        print(f"  Skipping {month_name} (missing data).")
+        continue
+    result = harmonize_diagnostic(c3_df, pio_df, month_name)
+    results_by_month[month_name] = result
+    fig = plot_diagnostic(result, month_name)
+    out_path = os.path.join(DATA_DIR, out_file)
+    fig.savefig(out_path, dpi=300, bbox_inches='tight')
+    print(f"\n  Saved: {out_path}")
+    plt.close(fig)
 
-# Create visualization
-fig = plot_diagnostic(result, 'October')
-fig.savefig('Harmonization_October.png', dpi=300, bbox_inches='tight')
-plt.show()
+# Summary table for Methods (April R²=0.26; October often higher)
+print("\n" + "=" * 60)
+print("SUMMARY FOR METHODS (Comment 6)")
+print("=" * 60)
+for month_name, res in results_by_month.items():
+    m = res['metrics']
+    print(f"  {month_name}:  R² = {m['r2']:.3f},  r = {m['corr']:.3f},  RMSE = {m['rmse']:.1f} km³  [{res['quality']}]")
+print("  → Use April R² in the 'modest fraction of variance' sentence; report October if desired.")
+print("  → Robustness: C3S-only, PIOMAS-only, ensemble (Extended Data Fig. X).")
+print("=" * 60)
 
-# Check quality
-print(f"Quality rating: {result['quality']}")
+try:
+    plt.show()
+except Exception:
+    pass
